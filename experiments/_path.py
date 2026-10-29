@@ -1,0 +1,6 @@
+"""Thêm src/ vào sys.path để các script trong experiments/ import được."""
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
