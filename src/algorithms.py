@@ -1,33 +1,26 @@
-"""Hàm huấn luyện cục bộ cho từng phương pháp.
+"""Huấn luyện cục bộ dùng chung cho mọi phương pháp.
 
-method:
-  client_k / fedavg : CE
-  fedprox           : CE + (mu/2)||w - w_global||^2
-  fedcodl           : CE + beta * MSE(softmax_global, softmax_local)   (codistillation)
-  fedkt             : lam * CE + (1-lam) * MSE(softmax_global, softmax_local)   (Eq. 5)
+File này KHÔNG chứa loss của từng phương pháp; loss nằm trong src/methods/<tên>.py.
 """
 import torch
-import torch.nn.functional as F
 
-
-def soft_prob(logits, T=1.0):
-    return F.softmax(logits / T, dim=1)
+from methods import get_method
 
 
 def local_train(model, client, method, cfg, epochs, global_model=None):
-    """Huấn luyện `model` tại chỗ; trả về loss trung bình epoch cuối."""
+    """Huấn luyện `model` tại chỗ; trả về loss trung bình epoch cuối.
+
+    method: tên phương pháp (str) hoặc một instance của methods.Method.
+    global_model: model global lúc bắt đầu round (teacher / điểm neo của FedProx).
+    """
+    m = get_method(method) if isinstance(method, str) else method
     dev = cfg.device
     model.to(dev).train()
     opt = torch.optim.SGD(model.parameters(), lr=cfg.lr, momentum=cfg.momentum)
     X, y = client["Xtr"].to(dev), client["ytr"].to(dev)
     n = len(y)
 
-    teacher = None
-    g_params = None
-    if method in ("fedkt", "fedcodl"):
-        teacher = global_model.to(dev).eval()
-    if method == "fedprox":
-        g_params = [p.detach().clone() for p in global_model.to(dev).parameters()]
+    ctx = m.begin_local(model, global_model, cfg)
 
     last_loss = 0.0
     for _ in range(epochs):
@@ -37,22 +30,7 @@ def local_train(model, client, method, cfg, epochs, global_model=None):
             b = perm[i:i + cfg.batch_size]
             xb, yb = X[b], y[b]
             out = model(xb)
-            hard = F.cross_entropy(out, yb)
-
-            if method in ("client_k", "fedavg"):
-                loss = hard
-            elif method == "fedprox":
-                prox = sum(((p - g) ** 2).sum() for p, g in zip(model.parameters(), g_params))
-                loss = hard + 0.5 * cfg.prox_mu * prox
-            else:
-                with torch.no_grad():
-                    q_g = soft_prob(teacher(xb), cfg.temperature)
-                q_l = soft_prob(out, cfg.temperature)
-                soft = F.mse_loss(q_l, q_g)
-                if method == "fedkt":
-                    loss = cfg.lam * hard + (1 - cfg.lam) * soft
-                else:  # fedcodl
-                    loss = hard + cfg.codl_beta * soft
+            loss = m.local_loss(ctx, model, xb, yb, out, cfg)
 
             opt.zero_grad()
             loss.backward()

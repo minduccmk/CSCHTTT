@@ -46,22 +46,10 @@ def _find_file(data_dir, name):
                 if p.suffix.lower() == ext and all(k in _norm(p.stem) for k in kws):
                     return p
     found = [str(p.relative_to(d)) for p in everything] if d.exists() else "(thư mục Dataset không tồn tại)"
-    print(f"\n[DEBUG] Dataset: {name}")
-    print(f"[DEBUG] Directory: {d.resolve()}")
-    print(f"[DEBUG] Extensions: {_EXTS[name]}")
-    print(f"[DEBUG] Keywords: {_KEYWORDS[name]}")
-    print("[DEBUG] Files found:")
-    for p in everything:
-        print(
-            f"  File: {p.name!r}"
-            f" | Extension: {p.suffix.lower()!r}"
-            f" | Normalized name: {_norm(p.stem)!r}"
-        )
     raise FileNotFoundError(
         f"Không thấy file cho '{name}' trong {d.resolve()}.\n"
         f"  Tên mong đợi, ví dụ: {DATASET_INFO[name]['files'][0]}\n"
-        f"  Các file đang có trong thư mục: {found}"
-        )
+        f"  Các file đang có trong thư mục: {found}")
 
 
 def _preprocess(df_x: pd.DataFrame, cat_cols):
