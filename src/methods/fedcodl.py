@@ -1,6 +1,6 @@
 """FedCodl (Ni et al., 2022): CE + beta * MSE(softmax_global, softmax_local) (codistillation).
 
-Tham số riêng: cfg.codl_beta (bài không nêu; mặc định 1.0), cfg.temperature.
+Tham số riêng (người B): cfg.codl_beta (bài không nêu; mặc định 1.0), cfg.codl_temperature.
 """
 import torch
 import torch.nn.functional as F
@@ -17,7 +17,7 @@ class FedCodl(Method):
     def local_loss(self, ctx, model, xb, yb, out, cfg):
         hard = F.cross_entropy(out, yb)
         with torch.no_grad():
-            q_g = soft_prob(ctx(xb), cfg.temperature)
-        q_l = soft_prob(out, cfg.temperature)
+            q_g = soft_prob(ctx(xb), cfg.codl_temperature)
+        q_l = soft_prob(out, cfg.codl_temperature)
         soft = F.mse_loss(q_l, q_g)
         return hard + cfg.codl_beta * soft

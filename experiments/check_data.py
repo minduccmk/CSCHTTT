@@ -12,14 +12,6 @@ PAPER = {  # samples, dim, imbalance ratio
     "gmsc": (150000, 67, 13.96),
 }
 
-print("ROOT:", ROOT)
-print("DATASET_INFO:", DATASET_INFO)
-
-for name in DATASET_INFO:
-    print(f"\nDataset: {name}")
-    print("Expected files:", DATASET_INFO[name]["files"])
-    print("Directory exists:", (ROOT / "Dataset").exists())
-
 for name in DATASET_INFO:
     try:
         X, y = load_dataset(name, ROOT / "Dataset")

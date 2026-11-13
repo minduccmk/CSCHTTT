@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
 
-from config import DATASET_INFO
+from config import DATASET_INFO, partition_of
 
 
 # từ khoá nhận diện file (đã chuẩn hoá: chữ thường, bỏ _, -, khoảng trắng)
@@ -121,13 +121,14 @@ def partition(X, y, K, setting, seed, train_ratio=0.8, dirichlet_alpha=0.5):
     """
     rng = np.random.RandomState(seed)
     n = len(y)
+    setting = partition_of(setting)      # 'iid'/'noniid' -> cách chia đã khoá trong config.PROTOCOL
     if setting == "iid":
         idx_per_client = [[] for _ in range(K)]
         for c in np.unique(y):
             idx = rng.permutation(np.where(y == c)[0])
             for i, part in enumerate(np.array_split(idx, K)):
                 idx_per_client[i].extend(part.tolist())
-    elif setting in ("noniid", "random"):
+    elif setting == "random":
         idx = rng.permutation(n)
         idx_per_client = [p.tolist() for p in np.array_split(idx, K)]
     elif setting == "sorted":

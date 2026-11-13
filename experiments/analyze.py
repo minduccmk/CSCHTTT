@@ -1,7 +1,9 @@
 """Tổng hợp kết quả -> bảng (CSV) tương ứng Table 2-6 và hình tương ứng Fig. 3-7."""
+import argparse
 import glob
 import json
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -11,17 +13,37 @@ import matplotlib.pyplot as plt
 
 import _path  # noqa: F401
 from _path import ROOT
+from config import FROZEN_HASH
 
 FED = ["fedavg", "fedprox", "fedcodl", "fedkt"]
 DS = ["australian", "loan", "taiwan", "gmsc"]
 ST = ["iid", "noniid"]
 
 
-def load(pattern):
-    runs = defaultdict(list)
-    for f in glob.glob(str(ROOT / pattern)):
+def load(pattern, include_nonfrozen=False):
+    """Đọc kết quả, hỗ trợ cả 2 định dạng và GỘP các phương pháp của cùng (dataset, setting, seed):
+       - mới : 1 file / phương pháp  ({"method":..., "result":...}) -> người A và B chạy riêng rồi gộp ở đây
+       - cũ  : 1 file chứa mọi phương pháp ({"methods": {...}})
+    File có tham số chung khác giá trị đã khoá bị bỏ qua (trừ khi include_nonfrozen=True)."""
+    merged, skipped = {}, []
+    for f in sorted(glob.glob(str(ROOT / pattern))):
         r = json.load(open(f))
-        runs[(r["dataset"], r["setting"], r["config"]["lam"])].append(r)
+        if r.get("shared_hash") is not None and r["shared_hash"] != FROZEN_HASH and not include_nonfrozen:
+            skipped.append(Path(f).name)
+            continue
+        key = (r["dataset"], r["setting"], r["config"]["lam"], r["config"]["seed"])
+        d = merged.setdefault(key, {"dataset": r["dataset"], "setting": r["setting"],
+                                    "config": r["config"], "methods": {}})
+        if "methods" in r:
+            d["methods"].update(r["methods"])
+        else:
+            d["methods"][r["method"]] = r["result"]
+    if skipped:
+        print(f"CẢNH BÁO: bỏ qua {len(skipped)} file có tham số chung khác giá trị đã khoá "
+              f"(ví dụ {skipped[0]}). Dùng --include-nonfrozen để đưa vào.")
+    runs = defaultdict(list)
+    for (ds, st, lam, _seed), d in merged.items():
+        runs[(ds, st, lam)].append(d)
     return runs
 
 
@@ -37,12 +59,12 @@ def final_over_seeds(rs, method, key):
     return float(np.mean(arr)) if arr else np.nan
 
 
-def main():
+def main(include_nonfrozen=False):
     out_t = ROOT / "results" / "tables"
     out_f = ROOT / "results" / "figures"
     out_t.mkdir(parents=True, exist_ok=True)
     out_f.mkdir(parents=True, exist_ok=True)
-    runs = load("results/raw/*.json")
+    runs = load("results/raw/*.json", include_nonfrozen)
     if not runs:
         print("Chưa có kết quả trong results/raw/. Hãy chạy run_all.py trước.")
         return
@@ -56,12 +78,10 @@ def main():
                 continue
             ck = [r["methods"]["client_k"]["client_acc"] for r in rs if "client_k" in r["methods"]]
             r2 = {"dataset": ds, "setting": st, "client_k": np.mean(ck) if ck else np.nan}
-            r2_mean = dict(r2)
             r3 = {"dataset": ds, "setting": st}
             r4 = {"dataset": ds, "setting": st}
             for m in FED:
                 r2[m] = final_over_seeds(rs, m, "global_acc")          # vòng cuối
-                r2_mean[m] = mean_over_seeds(rs, m, "global_acc")      # trung bình các round
                 r3[m] = mean_over_seeds(rs, m, "local_acc")
                 r4[m] = mean_over_seeds(rs, m, "global_acc")
             rows2.append(r2)
@@ -118,7 +138,7 @@ def main():
     plt.close(fig)
 
     # ---- Table 5-6: quét lambda ----
-    lam_runs = load("results/raw_lambda/*.json")
+    lam_runs = load("results/raw_lambda/*.json", include_nonfrozen)
     if lam_runs:
         r5, r6 = [], []
         for ds in DS:
@@ -137,4 +157,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--include-nonfrozen", action="store_true",
+                    help="đưa cả kết quả có tham số chung khác giá trị đã khoá vào bảng")
+    main(ap.parse_args().include_nonfrozen)

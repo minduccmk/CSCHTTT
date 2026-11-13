@@ -1,0 +1,22 @@
+# Phân quyền sửa file. GitHub tự yêu cầu đúng người duyệt PR.
+# Thay `@nguoiA` và `@nguoiB` bằng tên tài khoản GitHub thật của hai người.
+
+# --- Người A: FedAvg, FedKT ---
+/src/methods/fedavg.py        @nguoiA
+/src/methods/fedkt.py         @nguoiA
+
+# --- Người B: Client k, FedProx, FedCodl ---
+/src/methods/client_k.py      @nguoiB
+/src/methods/fedprox.py       @nguoiB
+/src/methods/fedcodl.py       @nguoiB
+
+# --- Dùng chung: cả hai cùng duyệt (xem docs/SHARED_PARAMS.md) ---
+/src/config.py                @nguoiA @nguoiB
+/src/data.py                  @nguoiA @nguoiB
+/src/models.py                @nguoiA @nguoiB
+/src/algorithms.py            @nguoiA @nguoiB
+/src/federated.py             @nguoiA @nguoiB
+/src/methods/base.py          @nguoiA @nguoiB
+/src/methods/__init__.py      @nguoiA @nguoiB
+/experiments/                 @nguoiA @nguoiB
+/docs/SHARED_PARAMS.md        @nguoiA @nguoiB
