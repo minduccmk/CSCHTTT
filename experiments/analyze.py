@@ -1,21 +1,22 @@
 """Tổng hợp kết quả -> bảng (CSV) tương ứng Table 2-6 và hình tương ứng Fig. 3-7."""
+import matplotlib
+# <-- THÊM: dùng để tính p-value giữa 2 phương pháp (cùng dataset, setting, seed) nếu muốn
+from scipy.stats import ttest_rel
+import pandas as pd
+import numpy as np
+from collections import defaultdict
+import json
+import glob
+import argparse
+import matplotlib.pyplot as plt
+from _path import ROOT
+from config import FROZEN_HASH
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from config import FROZEN_HASH
-from _path import ROOT
-import matplotlib.pyplot as plt
-import argparse
-import glob
-import json
-from collections import defaultdict
-from pathlib import Path
 
-import numpy as np
-import pandas as pd
-import matplotlib
 matplotlib.use("Agg")
 
 import _path  # noqa: F401
@@ -39,7 +40,9 @@ def load(pattern, include_nonfrozen=False):
         key = (r["dataset"], r["setting"], r["config"]
                ["lam"], r["config"]["seed"])
         d = merged.setdefault(key, {"dataset": r["dataset"], "setting": r["setting"],
-                                    "config": r["config"], "methods": {}})
+                                    "config": r["config"],
+                                    "seed": r["config"]["seed"],
+                                    "methods": {}})
         if "methods" in r:
             d["methods"].update(r["methods"])
         else:
@@ -84,6 +87,89 @@ def mean_metric_over_seeds(rs, method, history_key, metric):
             seed_means.append(float(np.mean(values)))
 
     return float(np.mean(seed_means)) if seed_means else np.nan
+
+def metric_getter(history_key, metric):
+    def g(res):
+        vals = [it[metric] for it in res.get(history_key, [])
+                if isinstance(it, dict) and it.get(metric) is not None]
+        return float(np.mean(vals)) if vals else None
+    return g
+
+
+GETTERS = {
+    "final_global_acc": lambda res: res["global_acc"][-1],
+    "avg_local_acc":    lambda res: float(np.mean(res["local_acc"])),
+    "avg_global_acc":   lambda res: float(np.mean(res["global_acc"])),
+}
+for _scope in ("local_metrics", "global_metrics"):
+    for _m in ("precision", "recall", "f1", "auc", "ks"):
+        GETTERS[f"{_scope}_{_m}"] = metric_getter(_scope, _m)
+
+
+def seed_values(rs, method, getter):
+    """{seed: giá trị} của một phương pháp; bỏ seed thiếu hoặc nan."""
+    out = {}
+    for r in rs:
+        res = r["methods"].get(method)
+        if res is None:
+            continue
+        try:
+            v = getter(res)
+        except (KeyError, IndexError, TypeError):
+            continue
+        if v is not None and not np.isnan(v):
+            out[r["seed"]] = float(v)
+    return out
+
+
+def export_stats(runs, out_t):
+    # 1) Bảng dài: mỗi dòng = một (dataset, setting, method, metric, seed)
+    rows = []
+    for ds in DS:
+        for st in ST:
+            rs = next((v for (d, s, _), v in runs.items() if d == ds and s == st), None)
+            if rs is None:
+                continue
+            for name, getter in GETTERS.items():
+                for m in FED:
+                    for seed, v in seed_values(rs, m, getter).items():
+                        rows.append(dict(dataset=ds, setting=st, method=m,
+                                         metric=name, seed=seed, value=v))
+            for seed, v in seed_values(rs, "client_k", lambda res: res["client_acc"]).items():
+                rows.append(dict(dataset=ds, setting=st, method="client_k",
+                                 metric="client_acc", seed=seed, value=v))
+    long = pd.DataFrame(rows)
+    long.to_csv(out_t / "seed_values_long.csv", index=False)
+
+    # 2) Trung bình ± độ lệch chuẩn, cùng bố cục dataset/setting x method
+    summ = (long.groupby(["dataset", "setting", "method", "metric"])["value"]
+                .agg(mean="mean", std="std", n="count").reset_index())
+    summ["cell"] = summ.apply(
+        lambda r: f"{r['mean']:.2f} ± {r['std']:.2f} (n={int(r['n'])})", axis=1)
+    for metric, sub in summ.groupby("metric"):
+        sub.pivot(index=["dataset", "setting"], columns="method", values="cell") \
+           .to_csv(out_t / f"table_{metric}_mean_std.csv")
+
+    # 3) t-test ghép cặp: FedKT so với từng baseline, ghép theo seed
+    sig = []
+    for (ds, st, metric), sub in long.groupby(["dataset", "setting", "metric"]):
+        wide = sub.pivot(index="seed", columns="method", values="value")
+        if "fedkt" not in wide:
+            continue
+        for base in [m for m in FED if m != "fedkt" and m in wide]:
+            pair = wide[["fedkt", base]].dropna()
+            n = len(pair)
+            if n < 3:
+                continue
+            d = pair["fedkt"] - pair[base]
+            if np.allclose(d, 0):
+                t = p = np.nan
+            else:
+                t, p = ttest_rel(pair["fedkt"], pair[base])
+            sig.append(dict(dataset=ds, setting=st, metric=metric, baseline=base,
+                            n_seeds=n, mean_diff=d.mean(), std_diff=d.std(ddof=1),
+                            t=t, p=p))
+    pd.DataFrame(sig).round(4).to_csv(out_t / "significance.csv", index=False)
 
 
 def main(include_nonfrozen=False):
@@ -158,6 +244,8 @@ def main(include_nonfrozen=False):
             df.to_csv(out_t / filename, index=False)
 
             print(f"Đã lưu {filename}")
+            
+    export_stats(runs, out_t)
 
     # ---- Fig 3-6: train loss / local acc / global acc ----
     for ds in DS:
