@@ -46,3 +46,53 @@ def accuracy(model, X, y, device="cpu"):
     model.to(device).eval()
     pred = model(X.to(device)).argmax(1).cpu()
     return (pred == y).float().mean().item() * 100.0
+
+import numpy as np
+from sklearn.metrics import roc_curve, roc_auc_score
+
+
+@torch.no_grad()
+def evaluate(model, X, y, device="cpu", threshold=0.5, pos_label=1):
+    """Metric đầy đủ trên một client. Lớp dương = pos_label (default).
+
+    Quy ước (nhớ ghi vào báo cáo):
+    - recall / AUC / KS = nan nếu tập test không có đủ 2 lớp (client lệch nhãn nặng)
+    - precision = 0 nếu mô hình không dự đoán dương nào
+    """
+    model.to(device).eval()
+    p = torch.softmax(model(X.to(device)), dim=1)[:, pos_label].cpu().numpy()
+    yt = (y.cpu().numpy() == pos_label).astype(int)
+    pred = (p > threshold).astype(int)
+
+    tp = int(((pred == 1) & (yt == 1)).sum())
+    fp = int(((pred == 1) & (yt == 0)).sum())
+    fn = int(((pred == 0) & (yt == 1)).sum())
+
+    prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    rec = tp / (tp + fn) if (tp + fn) > 0 else np.nan
+    if np.isnan(rec):
+        f1 = np.nan
+    else:
+        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+
+    if len(np.unique(yt)) < 2:
+        auc, ks = np.nan, np.nan
+    else:
+        auc = roc_auc_score(yt, p) * 100
+        fpr, tpr, _ = roc_curve(yt, p)
+        ks = float(np.max(tpr - fpr)) * 100
+
+    return {"acc": float((pred == yt).mean() * 100),
+            "precision": prec * 100, "recall": rec * 100, "f1": f1 * 100,
+            "auc": auc, "ks": ks}
+
+
+def mean_metrics(ds):
+    """Trung bình theo client, bỏ qua nan; kèm số client hợp lệ cho mỗi metric."""
+    out = {}
+    for k in ds[0]:
+        v = np.array([d[k] for d in ds], dtype=float)
+        ok = ~np.isnan(v)
+        out[k] = float(v[ok].mean()) if ok.any() else None   # None -> JSON null
+        out[k + "_n"] = int(ok.sum())
+    return out

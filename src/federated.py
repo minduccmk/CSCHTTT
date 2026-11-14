@@ -7,7 +7,7 @@ import copy
 import numpy as np
 import torch
 
-from algorithms import local_train, accuracy
+from algorithms import local_train, accuracy, evaluate, mean_metrics
 from methods import get_method
 from models import MLP
 
@@ -37,34 +37,47 @@ def run_federated(method, clients, in_dim, cfg, selections):
     K = len(clients)
     m.setup(global_model, K, cfg)
 
-    hist = {"train_loss": [], "local_acc": [], "global_acc": []}
+    hist = {"train_loss": [], "local_acc": [], "global_acc": [],
+            "local_metrics": [], "global_metrics": []}
+    thr = getattr(cfg, "threshold", 0.5)
+    pos = getattr(cfg, "pos_label", 1)
     for rnd, sel in enumerate(selections):
-        states, sizes, losses, laccs = [], [], [], []
+        states, sizes, losses, laccs, lmets = [], [], [], [], []
         # teacher cố định trong round = global model đầu round
         teacher = copy.deepcopy(global_model)
         for k in sel:
             local = m.init_local(k, global_model, cfg)
-            loss = local_train(local, clients[k], m, cfg, cfg.local_epochs, global_model=teacher)
+            loss = local_train(
+                local, clients[k], m, cfg, cfg.local_epochs, global_model=teacher)
             losses.append(loss)
-            laccs.append(accuracy(local, clients[k]["Xte"], clients[k]["yte"], cfg.device))
-            states.append({kk: v.detach().cpu().clone() for kk, v in local.state_dict().items()})
+            laccs.append(
+                accuracy(local, clients[k]["Xte"], clients[k]["yte"], cfg.device))
+            lmets.append(
+                evaluate(local, clients[k]["Xte"], clients[k]["yte"], cfg.device, thr, pos))
+            states.append({kk: v.detach().cpu().clone()
+                          for kk, v in local.state_dict().items()})
             sizes.append(len(clients[k]["ytr"]))
         global_model.load_state_dict(_avg_state(states, sizes))   # Eq. (4)
 
-        g_acc = float(np.mean([accuracy(global_model, c["Xte"], c["yte"], cfg.device) for c in clients]))
+        g_acc = float(np.mean(
+            [accuracy(global_model, c["Xte"], c["yte"], cfg.device) for c in clients]))
         hist["train_loss"].append(float(np.mean(losses)))
         hist["local_acc"].append(float(np.mean(laccs)))
         hist["global_acc"].append(g_acc)
+        hist["local_metrics"].append(mean_metrics(lmets))
+        hist["global_metrics"].append(
+            mean_metrics([evaluate(global_model, c["Xte"], c["yte"], cfg.device, thr, pos) for c in clients]))
     return hist
 
 
 def run_client_k(clients, in_dim, cfg):
     """Baseline 'Client k': mỗi client tự học trên dữ liệu riêng, không cộng tác."""
     m = get_method("client_k")
-    accs = []
+    accs, mets = [], []
     for k, c in enumerate(clients):
         torch.manual_seed(cfg.seed + k)
         model = MLP(in_dim, cfg.hidden, cfg.n_classes)
         local_train(model, c, m, cfg, cfg.client_k_epochs)
         accs.append(accuracy(model, c["Xte"], c["yte"], cfg.device))
-    return {"client_acc": float(np.mean(accs))}
+        mets.append(evaluate(model, c["Xte"], c["yte"], cfg.device, getattr(cfg, "threshold", 0.5), getattr(cfg, "pos_label", 1)))
+    return {"client_acc": float(np.mean(accs)), "client_metrics": mean_metrics(mets)}
