@@ -1,0 +1,9 @@
+dataset,setting,fedavg,fedprox,fedcodl,fedkt
+australian,iid,79.68,80.15,81.04,83.02
+australian,noniid,79.34,79.84,80.39,81.28
+loan,iid,42.14,41.76,43.6,43.3
+loan,noniid,40.69,40.42,40.97,47.73
+taiwan,iid,,,,
+taiwan,noniid,,,,
+gmsc,iid,,,,
+gmsc,noniid,,,,

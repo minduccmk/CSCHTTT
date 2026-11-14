@@ -1,4 +1,12 @@
 """Tổng hợp kết quả -> bảng (CSV) tương ứng Table 2-6 và hình tương ứng Fig. 3-7."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from config import FROZEN_HASH
+from _path import ROOT
+import matplotlib.pyplot as plt
 import argparse
 import glob
 import json
@@ -9,11 +17,8 @@ import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 import _path  # noqa: F401
-from _path import ROOT
-from config import FROZEN_HASH
 
 FED = ["fedavg", "fedprox", "fedcodl", "fedkt"]
 DS = ["australian", "loan", "taiwan", "gmsc"]
@@ -31,7 +36,8 @@ def load(pattern, include_nonfrozen=False):
         if r.get("shared_hash") is not None and r["shared_hash"] != FROZEN_HASH and not include_nonfrozen:
             skipped.append(Path(f).name)
             continue
-        key = (r["dataset"], r["setting"], r["config"]["lam"], r["config"]["seed"])
+        key = (r["dataset"], r["setting"], r["config"]
+               ["lam"], r["config"]["seed"])
         d = merged.setdefault(key, {"dataset": r["dataset"], "setting": r["setting"],
                                     "config": r["config"], "methods": {}})
         if "methods" in r:
@@ -59,6 +65,27 @@ def final_over_seeds(rs, method, key):
     return float(np.mean(arr)) if arr else np.nan
 
 
+def mean_metric_over_seeds(rs, method, history_key, metric):
+    """Trung bình metric qua các round, sau đó trung bình qua các seed."""
+    seed_means = []
+
+    for r in rs:
+        history = r["methods"].get(method, {}).get(history_key, [])
+
+        values = [
+            item[metric]
+            for item in history
+            if isinstance(item, dict)
+            and metric in item
+            and item[metric] is not None
+        ]
+
+        if values:
+            seed_means.append(float(np.mean(values)))
+
+    return float(np.mean(seed_means)) if seed_means else np.nan
+
+
 def main(include_nonfrozen=False):
     out_t = ROOT / "results" / "tables"
     out_f = ROOT / "results" / "figures"
@@ -73,31 +100,72 @@ def main(include_nonfrozen=False):
     rows2, rows3, rows4 = [], [], []
     for ds in DS:
         for st in ST:
-            rs = next((v for (d, s, _), v in runs.items() if d == ds and s == st), None)
+            rs = next((v for (d, s, _), v in runs.items()
+                      if d == ds and s == st), None)
             if rs is None:
                 continue
-            ck = [r["methods"]["client_k"]["client_acc"] for r in rs if "client_k" in r["methods"]]
-            r2 = {"dataset": ds, "setting": st, "client_k": np.mean(ck) if ck else np.nan}
+            ck = [r["methods"]["client_k"]["client_acc"]
+                  for r in rs if "client_k" in r["methods"]]
+            r2 = {"dataset": ds, "setting": st,
+                  "client_k": np.mean(ck) if ck else np.nan}
             r3 = {"dataset": ds, "setting": st}
             r4 = {"dataset": ds, "setting": st}
             for m in FED:
-                r2[m] = final_over_seeds(rs, m, "global_acc")          # vòng cuối
+                r2[m] = final_over_seeds(
+                    rs, m, "global_acc")          # vòng cuối
                 r3[m] = mean_over_seeds(rs, m, "local_acc")
                 r4[m] = mean_over_seeds(rs, m, "global_acc")
             rows2.append(r2)
             rows3.append(r3)
             rows4.append(r4)
-    pd.DataFrame(rows2).round(2).to_csv(out_t / "table2_final_round.csv", index=False)
-    pd.DataFrame(rows3).round(2).to_csv(out_t / "table3_avg_local_acc.csv", index=False)
-    pd.DataFrame(rows4).round(2).to_csv(out_t / "table4_avg_global_acc.csv", index=False)
+    pd.DataFrame(rows2).round(2).to_csv(
+        out_t / "table2_final_round.csv", index=False)
+    pd.DataFrame(rows3).round(2).to_csv(
+        out_t / "table3_avg_local_acc.csv", index=False)
+    pd.DataFrame(rows4).round(2).to_csv(
+        out_t / "table4_avg_global_acc.csv", index=False)
     print(pd.DataFrame(rows3).round(2).to_string(index=False))
+
+    # Các bảng metrics mới: local_metrics và global_metrics
+    metrics = ["precision", "recall", "f1", "auc", "ks"]
+
+    for scope in ["local_metrics", "global_metrics"]:
+        for metric in metrics:
+            rows = []
+
+            for ds in DS:
+                for st in ST:
+                    rs = next(
+                        (v for (d, s, _), v in runs.items()
+                         if d == ds and s == st),
+                        None
+                    )
+
+                    if rs is None:
+                        continue
+
+                    row = {"dataset": ds, "setting": st}
+
+                    for m in FED:
+                        row[m] = mean_metric_over_seeds(
+                            rs, m, scope, metric
+                        )
+
+                    rows.append(row)
+
+            df = pd.DataFrame(rows).round(2)
+            filename = f"table_{scope}_{metric}.csv"
+            df.to_csv(out_t / filename, index=False)
+
+            print(f"Đã lưu {filename}")
 
     # ---- Fig 3-6: train loss / local acc / global acc ----
     for ds in DS:
         fig, axes = plt.subplots(2, 3, figsize=(15, 7))
         ok = False
         for i, st in enumerate(ST):
-            rs = next((v for (d, s, _), v in runs.items() if d == ds and s == st), None)
+            rs = next((v for (d, s, _), v in runs.items()
+                      if d == ds and s == st), None)
             if rs is None:
                 continue
             ok = True
@@ -105,10 +173,12 @@ def main(include_nonfrozen=False):
                                             ("local_acc", "Local accuracy"),
                                             ("global_acc", "Global accuracy")]):
                 for m in FED:
-                    curves = [r["methods"][m][key] for r in rs if m in r["methods"]]
+                    curves = [r["methods"][m][key]
+                              for r in rs if m in r["methods"]]
                     if curves:
                         axes[i, j].plot(np.mean(curves, axis=0), label=m)
-                axes[i, j].set_title(f"{ds} ({'IID' if st == 'iid' else 'Non-IID'})")
+                axes[i, j].set_title(
+                    f"{ds} ({'IID' if st == 'iid' else 'Non-IID'})")
                 axes[i, j].set_xlabel("# Rounds")
                 axes[i, j].set_ylabel(lab)
                 axes[i, j].legend(fontsize=7)
@@ -120,13 +190,16 @@ def main(include_nonfrozen=False):
     # ---- Fig 7: std của accuracy qua các round (Non-IID) ----
     fig, axes = plt.subplots(1, 4, figsize=(16, 3.5))
     for ax, ds in zip(axes, DS):
-        rs = next((v for (d, s, _), v in runs.items() if d == ds and s == "noniid"), None)
+        rs = next((v for (d, s, _), v in runs.items()
+                  if d == ds and s == "noniid"), None)
         if rs is None:
             continue
         w = 0.2
         for i, m in enumerate(FED):
-            loc = np.mean([np.std(r["methods"][m]["local_acc"][1:]) for r in rs if m in r["methods"]])
-            glo = np.mean([np.std(r["methods"][m]["global_acc"][1:]) for r in rs if m in r["methods"]])
+            loc = np.mean([np.std(r["methods"][m]["local_acc"][1:])
+                          for r in rs if m in r["methods"]])
+            glo = np.mean([np.std(r["methods"][m]["global_acc"][1:])
+                          for r in rs if m in r["methods"]])
             ax.bar([0 + i * w, 1 + i * w], [loc, glo], width=w, label=m)
         ax.set_xticks([0.3, 1.3])
         ax.set_xticklabels(["Local acc", "Global acc"])
@@ -143,7 +216,8 @@ def main(include_nonfrozen=False):
         r5, r6 = [], []
         for ds in DS:
             for st in ST:
-                a, b = {"dataset": ds, "setting": st}, {"dataset": ds, "setting": st}
+                a, b = {"dataset": ds, "setting": st}, {
+                    "dataset": ds, "setting": st}
                 for lam in [0.9, 0.7, 0.5, 0.3, 0.1]:
                     rs = lam_runs.get((ds, st, lam))
                     if rs:
@@ -151,8 +225,10 @@ def main(include_nonfrozen=False):
                         b[lam] = mean_over_seeds(rs, "fedkt", "global_acc")
                 r5.append(a)
                 r6.append(b)
-        pd.DataFrame(r5).round(2).to_csv(out_t / "table5_lambda_local.csv", index=False)
-        pd.DataFrame(r6).round(2).to_csv(out_t / "table6_lambda_global.csv", index=False)
+        pd.DataFrame(r5).round(2).to_csv(
+            out_t / "table5_lambda_local.csv", index=False)
+        pd.DataFrame(r6).round(2).to_csv(
+            out_t / "table6_lambda_global.csv", index=False)
     print("Đã lưu bảng vào", out_t, "và hình vào", out_f)
 
 

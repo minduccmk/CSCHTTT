@@ -2,6 +2,8 @@
 
 File này KHÔNG chứa loss của từng phương pháp; loss nằm trong src/methods/<tên>.py.
 """
+import numpy as np
+from sklearn.metrics import roc_curve, roc_auc_score
 import torch
 
 from methods import get_method
@@ -47,9 +49,6 @@ def accuracy(model, X, y, device="cpu"):
     pred = model(X.to(device)).argmax(1).cpu()
     return (pred == y).float().mean().item() * 100.0
 
-import numpy as np
-from sklearn.metrics import roc_curve, roc_auc_score
-
 
 @torch.no_grad()
 def evaluate(model, X, y, device="cpu", threshold=0.5, pos_label=1):
@@ -82,9 +81,9 @@ def evaluate(model, X, y, device="cpu", threshold=0.5, pos_label=1):
         fpr, tpr, _ = roc_curve(yt, p)
         ks = float(np.max(tpr - fpr)) * 100
 
-    return {"acc": float((pred == yt).mean() * 100),
-            "precision": prec * 100, "recall": rec * 100, "f1": f1 * 100,
-            "auc": auc, "ks": ks}
+    return {
+        "precision": prec * 100, "recall": rec * 100, "f1": f1 * 100,
+        "auc": auc, "ks": ks}
 
 
 def mean_metrics(ds):
@@ -93,6 +92,7 @@ def mean_metrics(ds):
     for k in ds[0]:
         v = np.array([d[k] for d in ds], dtype=float)
         ok = ~np.isnan(v)
-        out[k] = float(v[ok].mean()) if ok.any() else None   # None -> JSON null
+        out[k] = float(v[ok].mean()) if ok.any(
+        ) else None   # None -> JSON null
         out[k + "_n"] = int(ok.sum())
     return out
