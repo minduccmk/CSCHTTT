@@ -3,7 +3,7 @@ australian,iid,80.8,80.3,82.24,84.62
 australian,noniid,79.53,78.71,80.05,82.69
 loan,iid,28.68,27.6,28.0,16.98
 loan,noniid,26.33,25.43,23.36,13.98
-taiwan,iid,,,,
-taiwan,noniid,,,,
-gmsc,iid,,,,
-gmsc,noniid,,,,
+taiwan,iid,41.86,42.13,43.6,46.66
+taiwan,noniid,40.35,40.31,42.46,44.96
+gmsc,iid,2.3,1.5,1.92,1.9
+gmsc,noniid,2.26,1.43,1.83,1.82
