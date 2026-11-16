@@ -29,6 +29,7 @@ DATASET_INFO = {
                                    "taiwan.csv", "taiwan.xls", "taiwan.xlsx",
                                    "UCI_Credit_Card.csv"]},
     "gmsc": {"K": 150, "files": ["cs-training.csv", "gmsc.csv"]},
+    "gmscfe": {"K": 150, "files": ["cs-training.csv", "gmsc.csv"]},
 }
 
 # Thứ tự phương pháp dùng trong bảng/hình

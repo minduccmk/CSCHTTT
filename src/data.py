@@ -67,8 +67,28 @@ def _preprocess(df_x: pd.DataFrame, cat_cols):
     return pd.concat(parts, axis=1).values.astype(np.float32)
 
 
+def _bin_onehot(df_x, q=6):
+    """Rời rạc hoá từng cột theo q phân vị rồi one-hot (kỹ thuật đặc trưng kiểu chấm điểm tín dụng)."""
+    parts = []
+    for c in df_x.columns:
+        s = df_x[c].astype(float)
+        s = s.fillna(s.median())
+        b = pd.qcut(s.rank(method="first"), q, labels=False, duplicates="drop")
+        parts.append(pd.get_dummies(b, prefix=str(c)).astype(np.float32))
+    return pd.concat(parts, axis=1)
+
+
 def load_dataset(name, data_dir="Dataset"):
-    path = _find_file(data_dir, name)
+    base = "gmsc" if name == "gmscfe" else name
+    path = _find_file(data_dir, base)
+    if name == "gmscfe":
+        # GMSC + đặc trưng rời rạc hoá: 10 cột gốc (MinMax) + one-hot 6 phân vị -> 70 chiều (bài báo: 67)
+        df = pd.read_csv(path)
+        df = df.drop(columns=[c for c in df.columns if str(c).startswith("Unnamed")])
+        y = df["SeriousDlqin2yrs"].values
+        x = df.drop(columns=["SeriousDlqin2yrs"])
+        X = np.concatenate([_preprocess(x, cat_cols=[]), _bin_onehot(x).values], axis=1).astype(np.float32)
+        return X, (y == np.unique(y).max()).astype(np.int64)
     if name == "australian":
         df = pd.read_csv(path, sep=r"\s+", header=None)
         y = df.iloc[:, -1].values
