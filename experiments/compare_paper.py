@@ -35,6 +35,8 @@ def load(batch=32):
         if int(b[1:]) != batch:
             continue
         h = json.load(open(f))
+        if "local_acc" not in h:
+            continue
         for k in ("local_acc", "global_acc"):
             res[(ds, part, method, variant)][k].append(float(np.mean(h[k])))
     return res

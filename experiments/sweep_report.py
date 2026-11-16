@@ -7,12 +7,15 @@ import _path  # noqa: F401
 from _path import ROOT
 from compare_paper import PAPER
 
+GMSC_KT = {"T3": {"iid": 93.60, "noniid": 93.32}, "T4": {"iid": 93.79, "noniid": 93.43}}  # FedKT trong bài (Table 3/4)
 R = defaultdict(dict)
 for f in glob.glob(str(ROOT / "results/calib/*.json")):
     ds, part, b, m, v, s = Path(f).stem.split("_")
-    if b != "b32" or ds not in ("australian", "loan"):
+    if b != "b32" or ds not in ("australian", "loan", "taiwan", "gmscfe"):
         continue
     h = json.load(open(f))
+    if "local_acc" not in h:      # file của Client k chỉ có client_acc -> bỏ qua
+        continue
     R[(ds, part, m, v)][int(s[1:])] = {"T3": np.mean(h["local_acc"]), "T4": np.mean(h["global_acc"])}
 rows = []
 for (ds, part, m, v), d in R.items():
@@ -26,7 +29,7 @@ for (ds, part, m, v), d in R.items():
         st = "iid" if part == "iid" else "noniid"
         rows.append(dict(variant=base, lam=float(lam), dataset=ds, setting=st, table=t, fedkt=k.mean(), fedavg=a.mean(),
                          diff=(k - a).mean(), wins=f"{int((k > a).sum())}/{len(seeds)}",
-                         paper_fedkt=PAPER[t][(ds, st)][3] if abs(float(lam) - 0.3) < 1e-9 else np.nan))
+                         paper_fedkt=(PAPER[t].get((ds, st), [None] * 4)[3] if ds != "gmscfe" else GMSC_KT[t][st]) if abs(float(lam) - 0.3) < 1e-9 else np.nan))
 df = pd.DataFrame(rows).sort_values(["variant", "dataset", "setting", "table", "lam"])
 df.round(2).to_csv(ROOT / "results/tables/lambda_sweep.csv", index=False)
 pd.set_option("display.width", 200)
