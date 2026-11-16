@@ -103,15 +103,13 @@ Bảng đầy đủ: `results/tables/main_table.csv`; hình: `results/figures/ta
 ## 7. Cài đặt
 
 ```bash
-git clone YOUR_REPOSITORY_URL
+git clone (https://github.com/minduccmk/CSCHTTT.git)
 cd FedKT-Credit-Scoring
 python -m venv .venv
 # Windows: .venv\Scripts\Activate.ps1      Linux/macOS: source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
-
-Thay `YOUR_REPOSITORY_URL` bằng đường dẫn repository của nhóm. Đặt 4 tệp dữ liệu vào `Dataset/` như mục 3 (tuân thủ giấy phép của từng bộ dữ liệu).
 
 ## 8. Chạy lại thực nghiệm
 
