@@ -1,405 +1,153 @@
 # Tái thực nghiệm FedKT cho bài toán chấm điểm tín dụng
 
-## 1. Giới thiệu dự án
+Tái hiện bài báo **"A novel federated learning approach with knowledge transfer for credit scoring"** (Wang, Xiao, Wang & Yao; *Decision Support Systems*, 177, 114084, 2024; Elsevier) bằng Python/PyTorch.
 
-Dự án được thực hiện nhằm nghiên cứu, triển khai và đánh giá phương pháp học liên kết kết hợp chuyển giao tri thức (*Federated Learning with Knowledge Transfer*) được đề xuất trong bài báo:
+**Trạng thái: đã hoàn thiện.** Dự án phục vụ học tập, nghiên cứu và kiểm tra khả năng tái lập kết quả.
 
-**Tên bài báo:** A novel federated learning approach with knowledge transfer for credit scoring
+Nhóm thực hiện: Nguyễn Minh Đức (24022628), Nguyễn Khánh An (24022600).
 
-**Tác giả:** Zhongyi Wang, Jin Xiao, Lu Wang và Jianrong Yao
+## 1. Tổng quan
 
-**Tạp chí:** Decision Support Systems
+Dữ liệu khách hàng nằm rải rác ở nhiều tổ chức tài chính và không thể gộp lại vì quyền riêng tư. Học liên kết (Federated Learning) cho phép nhiều bên cùng huấn luyện mô hình mà không chia sẻ dữ liệu gốc.
 
-**Tập:** 177
+**FedKT** là phương pháp trong bài báo. Mỗi vòng, client:
 
-**Mã bài báo:** 114084
+1. **Sao chép tham số:** lấy các lớp ẩn từ mô hình toàn cục, giữ lớp ra riêng của mình.
+2. **Tối ưu cục bộ:** huấn luyện 10 epoch với hàm mất mát tổng hợp
+   `L_local = λ·L_hard + (1−λ)·L_soft`,
+   trong đó `L_hard` là cross-entropy với nhãn thật và `L_soft` là MSE giữa đầu ra xác suất của mô hình toàn cục (Q_g) và cục bộ (Q_l) (chưng cất tri thức, T = 1).
 
-**Năm xuất bản:** 2024
+Server tổng hợp tham số bằng trung bình có trọng số theo kích thước dữ liệu.
 
-**Nhà xuất bản:** Elsevier
+## 2. Mô hình so sánh
 
-Bài báo nghiên cứu phương pháp học liên kết kết hợp chuyển giao tri thức nhằm giải quyết bài toán chấm điểm tín dụng (*Credit Scoring*).
+| Phương pháp | Mô tả |
+|---|---|
+| Client k | Mỗi client huấn luyện riêng, không liên kết |
+| FedAvg | Trung bình có trọng số tham số |
+| FedProx | FedAvg có số hạng proximal (μ = 0.01, chưa tinh chỉnh) |
+| FedCodl | Phương pháp chưng cất đối chứng |
+| **FedKT** | Phương pháp đề xuất (sao chép lớp ẩn + L_local), λ = 0.3 |
 
-Trong thực tế, dữ liệu khách hàng thường được lưu trữ tại các tổ chức tài chính khác nhau. Việc chia sẻ trực tiếp dữ liệu có thể gặp những hạn chế liên quan đến quyền riêng tư, bảo mật và quy định quản lý dữ liệu.
+## 3. Dữ liệu
 
-Học liên kết (*Federated Learning*) cho phép nhiều bên phối hợp huấn luyện mô hình mà không cần tập trung toàn bộ dữ liệu gốc về một nơi. Việc kết hợp cơ chế chuyển giao tri thức có thể hỗ trợ quá trình học tập giữa các bên theo thiết kế của mô hình.
+| Bộ dữ liệu | Số mẫu | Không vỡ nợ / Vỡ nợ | Tỷ lệ mất cân bằng | Số chiều | Số client (K) |
+|---|---|---|---|---|---|
+| Australian | 690 | 383 / 307 | 1.25 | 42 | 10 |
+| Loan | 1,225 | 902 / 323 | 2.80 | 28 | 20 |
+| Taiwan | 30,000 | 23,364 / 6,636 | 3.52 | 91 | 50 |
+| GMSC | 150,000 | 139,974 / 10,026 | 13.96 | 67 (bài báo) | 150 |
 
-Trong dự án này, nhóm tập trung phân tích phương pháp FedKT được đề xuất trong bài báo, tái triển khai các thí nghiệm có thể kiểm chứng và đánh giá hiệu suất mô hình trên các bộ dữ liệu chấm điểm tín dụng.
+Tệp dữ liệu đặt trong thư mục `Dataset/`: `australian.dat`, `loan.csv`, `default of credit card clients.xls` (Taiwan), `cs-training.csv` (GMSC).
 
-Kết quả thực nghiệm của nhóm sẽ được so sánh với kết quả công bố trong bài báo gốc và các phương pháp đối chứng phù hợp.
+**Lưu ý về GMSC.** Với 10 đặc trưng gốc, mọi phương pháp đều trùng tỷ lệ lớp đa số (~93.3–93.5%), nên không phân biệt được. Nhóm dùng biến thể **`gmscfe`** (10 đặc trưng chuẩn hóa MinMax + one-hot 6 phân vị mỗi cột = 70 chiều, gần 67 chiều của bài báo). Bảng kết quả dùng `gmscfe`; `gmsc` (10 đặc trưng) được giữ để đối chiếu.
 
-## 2. Mục tiêu nghiên cứu
+## 4. Thiết lập thực nghiệm (cố định)
 
-Dự án hướng đến các mục tiêu sau:
+- 50 vòng, 20% client tham gia mỗi vòng, E = 10 epoch cục bộ
+- SGD, lr = 0.5, momentum = 0.5; batch size 32 (giả định của nhóm)
+- MLP 2 lớp ẩn × 100 + 1 lớp FC; PyTorch 1.11.0
+- Mỗi client chia 80% huấn luyện / 20% kiểm tra
+- Kịch bản chia dữ liệu: **IID** (đủ hai nhãn theo tỷ lệ gốc) và **Non-IID** (lệch phân phối nhãn); ngoài ra có `dirichlet` và `sorted` trong nghiên cứu phân phối
+- Chỉ số: accuracy cục bộ, accuracy toàn cục (trung bình 50 vòng), accuracy vòng cuối, độ lệch chuẩn (Non-IID)
+- Số seed: 5–10 (Australian, Loan), 5 (Taiwan), 3 (gmscfe)
 
-* Phân tích bài toán nghiên cứu, đóng góp và phương pháp được trình bày trong bài báo gốc.
-* Tìm hiểu cơ chế học liên kết và chuyển giao tri thức trong phương pháp FedKT.
-* Thu thập, khảo sát và tiền xử lý các bộ dữ liệu phục vụ thực nghiệm.
-* Triển khai phương pháp FedKT dựa trên mô tả của tác giả.
-* So sánh hiệu suất FedKT với các phương pháp đối chứng được lựa chọn.
-* Đánh giá kết quả trên các bộ dữ liệu chấm điểm tín dụng.
-* Thực hiện một số kịch bản thực nghiệm mở rộng nhằm khảo sát các yếu tố ảnh hưởng đến hiệu suất mô hình.
-* Phân tích sự khác biệt giữa kết quả của nhóm và kết quả được công bố trong bài báo gốc.
+## 5. Kết quả chính
 
-### Các câu hỏi nghiên cứu
+Accuracy trung bình (%), IID và Non-IID. FedKT cao nhất trên **24/24** ô xét theo trung bình, hơn phương pháp tốt nhì từ +0.34 đến +3.08 điểm. Ví dụ (IID, local):
 
-Dự án tập trung tìm hiểu những vấn đề sau:
+| Dataset | FedAvg | FedProx | FedCodl | **FedKT** |
+|---|---|---|---|---|
+| Australian | 84.09 | 83.93 | 84.66 | **85.95** |
+| Loan | 68.23 | 68.27 | 70.47 | **73.55** |
+| Taiwan | 78.43 | 79.13 | 79.66 | **81.01** |
+| GMSC (gmscfe) | 92.21 | 91.29 | 92.84 | **93.34** |
 
-1. Hiệu suất của FedKT so với các phương pháp đối chứng như thế nào?
-2. Kết quả của FedKT có nhất quán trên các bộ dữ liệu khác nhau không?
-3. Sự không đồng nhất trong phân phối dữ liệu giữa các bên ảnh hưởng như thế nào đến hiệu suất mô hình?
-4. Nhóm có thể tái hiện các kết quả thực nghiệm được báo cáo trong bài báo gốc ở mức độ nào?
-5. Những hạn chế và hướng cải tiến nào có thể được nhận diện từ kết quả thực nghiệm?
+Bảng đầy đủ: `results/tables/main_table.csv`; hình: `results/figures/table_local_global.png`, `table_final.png`.
 
-Các câu hỏi trên sẽ được đánh giá dựa trên những thí nghiệm thực tế được triển khai trong dự án.
+**Ảnh hưởng của λ** (`results/figures/table_lambda.png`): Australian tốt nhất ở λ = 0.3; Loan và Taiwan tốt nhất ở λ = 0.1. Khi λ = 0.9, FedKT có thể thấp hơn FedAvg (ví dụ Loan IID local 67.29 so với 67.49). Chưa chạy quét λ cho GMSC.
 
-## 3. Bài báo nghiên cứu gốc
+### Điều cần nói rõ
 
-Thông tin bài báo:
+- Xét theo **từng seed**, FedKT không luôn cao nhất (ví dụ Australian IID global: 7/10 seed). Khẳng định "cao nhất" áp dụng cho **trung bình**.
+- Với phân chia lệch nhãn mạnh (`dirichlet`, `sorted`), FedKT thấp hơn ở local và final.
+- Số liệu không trùng hoàn toàn bài báo; bài báo không công bố đủ chi tiết (batch size, cách chia client, tiền xử lý) nên nhóm chọn giả định riêng. Việc FedKT đứng đầu là kết quả tái lập, không phải sao chép số liệu.
+- FedProx (μ = 0.01) chưa tinh chỉnh; `gmscfe` chỉ 3 seed; Client k chưa chạy cho `gmscfe`.
+- Cách giữ lớp ra riêng (`fc_mode=keep`) là cách diễn giải của nhóm.
 
-Wang, Z., Xiao, J., Wang, L., & Yao, J. (2024). *A novel federated learning approach with knowledge transfer for credit scoring*. Decision Support Systems, 177, 114084.
+## 6. Cấu trúc dự án
 
-* Nhà xuất bản: Elsevier.
-* Năm xuất bản: 2024.
-* DOI: [Bổ sung DOI chính xác của bài báo].
-* Trang công bố chính thức: [Bổ sung đường dẫn bài báo].
-
-Bài báo gốc là tài liệu tham chiếu chính để nhóm tìm hiểu mô hình, thuật toán, thiết lập thực nghiệm và kết quả mà phương pháp FedKT đạt được.
-
-## 4. Phương pháp nghiên cứu
-
-Dự án tập trung vào phương pháp học liên kết kết hợp chuyển giao tri thức cho bài toán chấm điểm tín dụng.
-
-Quy trình nghiên cứu dự kiến bao gồm các giai đoạn sau.
-
-### 4.1. Phân tích bài báo
-
-Nhóm phân tích các nội dung chính:
-
-* Bối cảnh và động lực nghiên cứu.
-* Phát biểu bài toán.
-* Những hạn chế của các phương pháp trước đó.
-* Đóng góp chính của bài báo.
-* Kiến trúc mô hình FedKT.
-* Thuật toán và cơ chế chuyển giao tri thức.
-* Các bộ dữ liệu và phương pháp đối chứng.
-* Thiết lập, kết quả và đánh giá thực nghiệm của tác giả.
-
-### 4.2. Chuẩn bị dữ liệu
-
-Dữ liệu được khảo sát và tiền xử lý trước khi đưa vào mô hình.
-
-Các bước có thể bao gồm:
-
-* Kiểm tra cấu trúc và chất lượng dữ liệu.
-* Xử lý giá trị thiếu.
-* Mã hóa các biến phân loại.
-* Chuẩn hóa các đặc trưng số khi cần thiết.
-* Xác định biến đầu vào và biến mục tiêu.
-* Phân chia dữ liệu huấn luyện và đánh giá.
-* Xây dựng các tập dữ liệu cục bộ tương ứng với những client tham gia học liên kết.
-
-Quy trình thực tế sẽ được xác định dựa trên đặc điểm của từng bộ dữ liệu và thiết lập trong bài báo gốc.
-
-Những thay đổi do nhóm tự thực hiện sẽ được ghi lại để phân biệt với quy trình của tác giả.
-
-### 4.3. Triển khai FedKT
-
-Nhóm triển khai các thành phần cần thiết của phương pháp FedKT theo mô tả trong bài báo, bao gồm những thành phần liên quan đến huấn luyện cục bộ, phối hợp giữa các client và server, chuyển giao tri thức và đánh giá mô hình.
-
-Chi tiết thuật toán, cấu hình và cách triển khai sẽ được trình bày trong mã nguồn và tài liệu phương pháp của dự án.
-
-### 4.4. So sánh với các phương pháp đối chứng
-
-Hiệu suất FedKT sẽ được so sánh với các phương pháp đối chứng phù hợp.
-
-Các phương pháp được sử dụng trong thí nghiệm tái thực nghiệm sẽ được xác định dựa trên bài báo gốc. Những phương pháp bổ sung do nhóm lựa chọn sẽ được phân biệt rõ với các phương pháp được tác giả sử dụng.
-
-## 5. Dữ liệu thực nghiệm
-
-Dự án dự kiến sử dụng bốn bộ dữ liệu liên quan đến bài toán tín dụng:
-
-| STT | Bộ dữ liệu | Mô tả                                    |
-| --- | ---------- | ---------------------------------------- |
-| 1   | Australia  | Bộ dữ liệu chấp thuận tín dụng Australia |
-| 2   | Taiwan     | Bộ dữ liệu tín dụng Taiwan               |
-| 3   | Loan       | Bộ dữ liệu liên quan đến khoản vay       |
-| 4   | GMSC       | Give Me Some Credit                      |
-
-Các thông tin chi tiết về dữ liệu sẽ được thống kê từ chính những tệp mà nhóm sử dụng trong thực nghiệm.
-
-Đối với mỗi bộ dữ liệu, nhóm sẽ ghi nhận:
-
-* Nguồn công bố và đường dẫn tải dữ liệu.
-* Phiên bản dữ liệu và định dạng tệp.
-* Số lượng bản ghi.
-* Số lượng đặc trưng.
-* Biến mục tiêu và ý nghĩa các nhãn.
-* Phân phối các lớp.
-* Tình trạng giá trị thiếu.
-* Quy trình tiền xử lý.
-* Phương pháp phân chia dữ liệu giữa các client.
-
-Tên bộ dữ liệu không đủ để khẳng định dữ liệu đang sử dụng hoàn toàn giống với dữ liệu của tác giả. Vì vậy, nhóm sẽ kiểm tra nguồn dữ liệu, phiên bản và quy trình tiền xử lý trước khi đưa ra kết luận về khả năng tái thực nghiệm.
-
-### Quy định về dữ liệu
-
-Tùy theo dung lượng và điều khoản sử dụng, dữ liệu gốc có thể không được lưu trực tiếp trong repository.
-
-Trong trường hợp đó, nhóm sẽ cung cấp đường dẫn nguồn và hướng dẫn tải, tổ chức, tiền xử lý dữ liệu trong thư mục tài liệu của dự án.
-
-Người sử dụng cần tuân thủ các điều khoản cấp phép tương ứng của từng bộ dữ liệu.
-
-## 6. Công nghệ và công cụ
-
-Python được sử dụng làm ngôn ngữ lập trình chính cho quá trình xử lý dữ liệu, triển khai mô hình và thực nghiệm.
-
-Các thư viện và công cụ được lựa chọn tùy theo yêu cầu triển khai thực tế, có thể bao gồm:
-
-| Công cụ          | Mục đích                                               |
-| ---------------- | ------------------------------------------------------ |
-| Python           | Ngôn ngữ lập trình chính                               |
-| NumPy            | Tính toán số học                                       |
-| pandas           | Đọc, phân tích và tiền xử lý dữ liệu                   |
-| scikit-learn     | Các công cụ tiền xử lý và đánh giá mô hình khi phù hợp |
-| PyTorch          | Triển khai mạng nơ-ron nếu phương pháp yêu cầu         |
-| Matplotlib       | Trực quan hóa kết quả                                  |
-| Jupyter Notebook | Khảo sát dữ liệu và phân tích kết quả                  |
-| Git              | Quản lý phiên bản mã nguồn                             |
-| GitHub           | Lưu trữ mã nguồn và cộng tác nhóm                      |
-
-Danh sách thư viện chính thức sẽ được xác định từ môi trường thực nghiệm và lưu trong tệp `requirements.txt`.
-
-## 7. Cấu trúc dự án
-
-> Chỉnh sửa cây thư mục theo cách tổ chức mã nguồn, tài liệu và kết quả thực nghiệm thực tế.
-
-
-FedKT-Credit-Scoring/
-│
-├── README.md
-│   # Tài liệu giới thiệu tổng quan về dự án
-│
-├── requirements.txt
-│   # Danh sách thư viện và phiên bản cần thiết
-│
-├── .gitignore
-│   # Các tệp và thư mục không đưa lên GitHub
-│
-├── docs/
-│   # Tài liệu phân tích bài báo và phương pháp nghiên cứu
-│   
-│
-├── dataset/
-│   # Hướng dẫn dữ liệu và dữ liệu thực nghiệm
-│   
-│
+```
+├── Dataset/            # Dữ liệu gốc
 ├── src/
-│   # Mã nguồn triển khai
-│   
-│
-├── configs/
-│
+│   ├── config.py       # Cấu hình, thông tin dataset
+│   ├── data.py         # Đọc, tiền xử lý, chia client (gồm gmscfe)
+│   ├── models.py       # MLP
+│   ├── federated.py    # Vòng lặp học liên kết
+│   ├── algorithms.py
+│   └── methods/        # client_k, fedavg, fedprox, fedcodl, fedkt
 ├── experiments/
-│
-├── notebooks/
-│
-└── results/
+│   ├── run_all.py          # Chạy toàn bộ mô hình × dataset × kịch bản
+│   ├── sweep_lambda.py     # Quét λ
+│   ├── gmscfe_run.py       # Thực nghiệm GMSC mở rộng
+│   ├── main_table.py, partition_report.py, sweep_report.py
+│   ├── table_figure.py, table_lambda_figure.py, plot_extra.py
+│   └── compare_paper.py    # So với số liệu bài báo
+├── results/
+│   ├── calib/, raw/, raw_lambda/   # JSON kết quả từng lần chạy
+│   ├── tables/                     # Bảng CSV
+│   └── figures/                    # Hình
+└── docs/               # SHARED_PARAMS.md, ket_qua_so_sanh.md
+```
 
-
-## 8. Cài đặt môi trường
-
-### 8.1. Tải mã nguồn
+## 7. Cài đặt
 
 ```bash
 git clone YOUR_REPOSITORY_URL
 cd FedKT-Credit-Scoring
-```
-
-Thay `YOUR_REPOSITORY_URL` bằng đường dẫn repository GitHub thực tế của nhóm.
-
-### 8.2. Tạo môi trường Python
-
-```bash
 python -m venv .venv
-```
-
-Trên Windows, kích hoạt môi trường bằng PowerShell:
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-Trên macOS hoặc Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-### 8.3. Cài đặt thư viện
-
-Nếu repository đã có tệp `requirements.txt`, chạy:
-
-```bash
+# Windows: .venv\Scripts\Activate.ps1      Linux/macOS: source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 8.4. Chuẩn bị dữ liệu
+Thay `YOUR_REPOSITORY_URL` bằng đường dẫn repository của nhóm. Đặt 4 tệp dữ liệu vào `Dataset/` như mục 3 (tuân thủ giấy phép của từng bộ dữ liệu).
 
-Thực hiện theo hướng dẫn trong `data/README.md` để tải và đặt dữ liệu vào đúng vị trí.
+## 8. Chạy lại thực nghiệm
 
-Đường dẫn dữ liệu đầu vào và định dạng tệp cần được thống nhất với cấu hình của chương trình.
+```bash
+# 1) Chạy tất cả (ví dụ máy 16 nhân)
+python experiments/run_all.py --procs 14 --seeds 0 1 2 3 4
 
-## 9. Thiết kế thực nghiệm
+# 2) Tạo bảng và hình
+python experiments/partition_report.py
+python experiments/main_table.py
+python experiments/plot_extra.py
+python experiments/table_figure.py
 
-Dự án chia các thí nghiệm thành hai nhóm chính.
+# 3) Quét λ và bảng λ
+python experiments/sweep_lambda.py
+python experiments/sweep_report.py
+python experiments/table_lambda_figure.py --variant keep
+```
 
-### 9.1. Tái thực nghiệm bài báo gốc
+Tùy chọn của `run_all.py`: `--datasets`, `--parts`, `--seeds`, `--procs`, `--fresh`.
 
-Mục tiêu là triển khai lại các thí nghiệm của tác giả trong phạm vi thông tin, dữ liệu và tài nguyên tính toán mà nhóm có thể tiếp cận.
+## 9. Khả năng tái lập
 
-Các công việc bao gồm:
+Cố định hạt giống (seed) cho mỗi lần chạy; tham số giao thức đóng băng trong `src/config.py` (có băm kiểm tra); mọi kết quả thô lưu dạng JSON trong `results/`. Số liệu báo cáo đều lấy từ các tệp này.
 
-* Xác định thiết lập thực nghiệm trong bài báo.
-* Triển khai phương pháp FedKT.
-* Triển khai các phương pháp đối chứng được lựa chọn.
-* Sử dụng các bộ dữ liệu tương ứng.
-* Đánh giá mô hình theo các chỉ số phù hợp.
-* So sánh kết quả của nhóm với kết quả được công bố trong bài báo.
+## 10. Hạn chế
 
-Những điểm khác biệt về dữ liệu, cách chia client, cấu hình mô hình hoặc tài nguyên tính toán sẽ được ghi nhận.
+- Chỉ 4 bộ dữ liệu công khai và một MLP nhỏ.
+- Chỉ đo accuracy; chưa có AUC, F1, Precision/Recall (accuracy dễ gây hiểu nhầm với dữ liệu mất cân bằng như GMSC).
+- Quyền riêng tư và độ phức tạp truyền thông chưa được phân tích sâu.
+- Khác biệt so với bài báo do tiền xử lý, cách chia client, batch size và siêu tham số.
 
-### 9.2. Thực nghiệm mở rộng
+Hướng phát triển: dữ liệu dị thể phức tạp hơn, giảm chi phí truyền thông, phân tích lý thuyết, bổ sung AUC/F1 và quét μ cho FedProx.
 
-Nhóm có thể thực hiện một số thí nghiệm bổ sung để đánh giá sâu hơn phương pháp FedKT, chẳng hạn:
+## 11. Trích dẫn
 
-* Thay đổi số lượng client.
-* Thay đổi mức độ không đồng nhất dữ liệu.
-* Thay đổi lượng dữ liệu huấn luyện.
-* Thay đổi một số siêu tham số.
-* So sánh tính ổn định của mô hình qua nhiều lần chạy.
-* Đánh giá hiệu suất trên các bộ dữ liệu khác nhau.
+Wang, Z., Xiao, J., Wang, L., & Yao, J. (2024). A novel federated learning approach with knowledge transfer for credit scoring. *Decision Support Systems*, 177, 114084.
 
-Các hướng mở rộng cuối cùng sẽ được lựa chọn theo mục tiêu nghiên cứu, khả năng triển khai và tài nguyên tính toán của nhóm.
-
-Kết quả của thí nghiệm mở rộng sẽ được phân biệt với kết quả tái thực nghiệm bài báo gốc.
-
-## 10. Các chỉ số đánh giá
-
-Tùy theo thiết lập của bài báo gốc, dự án có thể sử dụng các chỉ số phân loại sau:
-
-| Chỉ số    | Ý nghĩa                                                                |
-| --------- | ---------------------------------------------------------------------- |
-| Accuracy  | Tỷ lệ dự đoán đúng trên tổng số mẫu                                    |
-| Precision | Tỷ lệ dự đoán dương tính đúng trên tổng số mẫu được dự đoán dương tính |
-| Recall    | Tỷ lệ mẫu dương tính thực tế được mô hình nhận diện                    |
-| F1-score  | Trung bình điều hòa giữa Precision và Recall                           |
-| ROC-AUC   | Đánh giá khả năng phân biệt hai lớp của mô hình                        |
-
-Các chỉ số chính thức sẽ được xác định dựa trên bài báo gốc và mục tiêu thực nghiệm.
-
-Đối với dữ liệu mất cân bằng, Accuracy có thể chưa phản ánh đầy đủ hiệu suất mô hình. Vì vậy, nhóm sẽ xem xét thêm các chỉ số phù hợp với bài toán chấm điểm tín dụng.
-
-Định nghĩa lớp dương tính và cách tính các chỉ số sẽ được ghi rõ để bảo đảm tính nhất quán khi so sánh.
-
-## 11. Kết quả thực nghiệm
-
-Kết quả thực nghiệm sẽ được cập nhật sau khi các chương trình được triển khai và chạy thành công.
-
-### 11.1. Kết quả tái thực nghiệm
-
-Nhóm sẽ trình bày:
-
-* Kết quả của FedKT trên từng bộ dữ liệu.
-* Kết quả của các phương pháp đối chứng.
-* So sánh với kết quả công bố trong bài báo gốc.
-* Phân tích mức độ tương đồng và khác biệt.
-* Giải thích những nguyên nhân có thể dẫn đến sai khác.
-
-### 11.2. Kết quả thực nghiệm mở rộng
-
-Nhóm sẽ phân tích ảnh hưởng của các yếu tố được khảo sát đến hiệu suất mô hình.
-
-Các bảng số liệu và biểu đồ sẽ được lưu trong thư mục kết quả tương ứng.
-
-Mọi số liệu được báo cáo phải xuất phát từ kết quả thực nghiệm thực tế và đi kèm thông tin về thiết lập thí nghiệm.
-
-## 12. Khả năng tái lập thực nghiệm
-
-Để hỗ trợ việc kiểm tra và tái lập kết quả, nhóm hướng đến việc công khai các thông tin sau:
-
-* Nguồn và phiên bản dữ liệu.
-* Các bước tiền xử lý.
-* Cách phân chia dữ liệu giữa các client.
-* Cấu hình mô hình và siêu tham số.
-* Quy trình huấn luyện.
-* Các chỉ số đánh giá.
-* Phiên bản thư viện và môi trường lập trình.
-* Hạt giống ngẫu nhiên khi phù hợp.
-* Lệnh chạy các thí nghiệm.
-* Kết quả thực nghiệm và cách phân tích.
-
-Kết quả sẽ được phân biệt thành ba nhóm:
-
-1. Kết quả được báo cáo trong bài báo gốc.
-2. Kết quả do nhóm tự tái thực nghiệm.
-3. Kết quả từ các thí nghiệm mở rộng.
-
-Việc phân biệt này giúp người đọc đánh giá chính xác phạm vi và mức độ tái lập của dự án.
-
-## 13. Nghiên cứu liên quan
-
-Nhóm sẽ tìm hiểu và phân tích các nghiên cứu liên quan đến:
-
-* Học liên kết trong lĩnh vực tài chính.
-* Chuyển giao tri thức trong học máy phân tán.
-* Chấm điểm tín dụng bằng các phương pháp học máy.
-* Học máy bảo vệ quyền riêng tư.
-* Các phương pháp học tập cộng tác trên dữ liệu không đồng nhất.
-
-Phần tổng quan tài liệu sẽ bao gồm:
-
-* Những nghiên cứu liên quan được bài báo gốc trích dẫn.
-* Những nghiên cứu được công bố sau đó và có trích dẫn bài báo gốc.
-
-Thông tin thư mục, đường dẫn nguồn và nội dung phân tích sẽ được bổ sung trong tài liệu nghiên cứu liên quan của dự án.
-
-## 14. Hạn chế
-
-Kết quả tái thực nghiệm có thể khác với kết quả của tác giả do sự khác biệt về:
-
-* Phiên bản và cách tiền xử lý dữ liệu.
-* Phương pháp phân chia dữ liệu giữa các client.
-* Chi tiết triển khai mô hình.
-* Siêu tham số và thiết lập huấn luyện.
-* Phiên bản thư viện và môi trường phần mềm.
-* Khởi tạo ngẫu nhiên và biến động giữa các lần chạy.
-
-Nhóm sẽ mô tả rõ những khác biệt đã xác định được và tránh khẳng định tái thực nghiệm hoàn toàn thành công nếu chưa có đủ bằng chứng.
-
-## 15. Thành viên nhóm
-
-Dự án được thực hiện trong khuôn khổ bài tập lớn/báo cáo cuối kỳ của học phần.
-
-| MSV        | Họ và tên             |
-| ---        | --------------------- |
-| 24022628   | Nguyễn Minh Đức       |
-| 24022600   | Nguyễn Khánh An       |
-
-
-## 16. Giấy phép và trích dẫn
-
-Mã nguồn của dự án sẽ được cấp phép theo giấy phép do nhóm lựa chọn và công bố trong repository.
-
-Bài báo gốc và các bộ dữ liệu bên thứ ba vẫn chịu sự điều chỉnh của điều khoản bản quyền và giấy phép tương ứng.
-
-Khi sử dụng hoặc thảo luận về phương pháp được đề xuất trong nghiên cứu, cần trích dẫn bài báo gốc:
-
-Wang, Z., Xiao, J., Wang, L., & Yao, J. (2024). *A novel federated learning approach with knowledge transfer for credit scoring*. Decision Support Systems, 177, 114084.
-
----
-
-**Trạng thái dự án:** Đang thực hiện.
-
-Dự án phục vụ mục đích học thuật, nghiên cứu thực nghiệm và tìm hiểu khả năng tái lập kết quả nghiên cứu.
+Mã nguồn thuộc giấy phép do nhóm chọn; bài báo và dữ liệu bên thứ ba theo giấy phép riêng.
